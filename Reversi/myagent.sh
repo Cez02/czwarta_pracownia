@@ -1,3 +1,4 @@
 #!/bin/bash
 
-python3 iago.py 2
+python3 myagent.py 2
+
