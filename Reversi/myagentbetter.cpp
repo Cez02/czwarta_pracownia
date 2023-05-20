@@ -15,6 +15,8 @@ typedef short unsigned int sui;
 
 #define OPPONENT(player) 1 - player
 
+#define CHECK_BIT(mask, pos) (mask & ((ll)1 << pos))
+
 #define X_IN_DATA 0xF
 #define Y_IN_DATA 0xF0
 
@@ -31,48 +33,48 @@ double BOARD_WEIGHTS[8][8] = {
 
 struct pos_t{
 public:
-    char data;
+    unsigned char data;
 
     pos_t(int x, int y){
         if(x == -1)
-            x = 0xF;
-        if(y == -1)
-            y = 0xF;
-
-        data = (x | (y << 4));
+            data = 0xFF;
+        else
+            data = (y<<3) + x;
     }
 
     pos_t()
         : pos_t(-1, -1) {}
 
     bool isEmpty(){
-        return data == -1;
+        return data == 0xFF;
     }
 
     void set_x(int x){
-        if(x == -1)
-            x = 0xF;
-        data = (data & Y_IN_DATA) | x;
+        if(x == -1){
+            data = 0xff;
+            return;
+        }
+        data = (get_y()<<3 + x);
     }
 
     void set_y(int y){
-        if(y == -1)
-            y = 0xF;
-        data = (data & X_IN_DATA) | (y << 4);
+        if(y == -1){
+            data = 0xff;
+            return;
+        }
+        data = (y<<3 + get_x());
     }
 
     int get_x() const{
-        int x = data & X_IN_DATA;
-        if(x == 0xF)
-            x = -1;
-        return x;
+        if(data == 0xFF)
+            return -1;
+        return data & 0x7;
     }
 
     int get_y() const{
-        int y = (data & Y_IN_DATA) >> 4;
-        if(y == 0xF)
-            y = -1;
-        return y;
+        if(data == 0xFF)
+            return -1;
+        return data >> 3;
     }
 
     friend bool operator==(const pos_t &x, const pos_t &y)
@@ -81,7 +83,7 @@ public:
     }
 };
 
-vector<pos_t> DIRS = {
+pos_t DIRS[] = {
     pos_t(-1, -1),
     pos_t(-1, 0),
     pos_t(-1, 1),
@@ -92,7 +94,7 @@ vector<pos_t> DIRS = {
     pos_t(0, -1)
 };
 
-vector<pos_t> CLOSE_CORNERS = {
+pos_t CLOSE_CORNERS[] = {
     pos_t(0, 1),
     pos_t(1, 0),
     pos_t(1, 1),
@@ -145,9 +147,7 @@ typedef char direction_t;
 class Reversi{
 public:
     board_t playerPieces[2];
-
-    int moves_made = 0;
-    pos_t lastPos, lastlastPos;
+    sui moves_made;
 
     Reversi(){
         setup_initial_board();
@@ -156,16 +156,13 @@ public:
     void setup_initial_board(){
         playerPieces[PLAYER0] = 0x0000000810000000;
         playerPieces[PLAYER1] = 0x0000001008000000;
-        
         moves_made = 0;
-        lastPos = pos_t(-1, -1);
-        lastlastPos = pos_t(-1, -1);
     }
 
     player_t get_player(int x, int y){
-        if(playerPieces[PLAYER0] & ((ll)1 << (y * 8 + x)))
+        if(playerPieces[PLAYER0] & ((ll)1 << ((y<<3) + x)))
             return PLAYER0;
-        if(playerPieces[PLAYER1] & ((ll)1 << (y * 8 + x)))
+        if(playerPieces[PLAYER1] & ((ll)1 << ((y<<3) + x)))
             return PLAYER1;
         return NONE;
     }
@@ -225,50 +222,33 @@ public:
     }
 
     bool is_one(board_t board, int x, int y){
-        return board & ((ll)1 << (8*y + x));
+        return board & ((ll)1 << ((y<<3) + x));
     }
 
     void set_one(board_t &board, int x, int y){
-        board |= ((ll)1 << (8*y + x));
+        board |= ((ll)1 << ((y<<3) + x));
     }
 
-    /*
-    We will be doing shifts 
-    */
-    void moves(player_t player, vector<pos_t> &moves){
+    board_t moves(player_t player){
         board_t filled = 0;
-
         board_t freespaces = 0;
 
         for(direction_t dir = 0; dir < 8; dir++){
-
-            board_t tmpPlayer = playerPieces[player];
-
             filled = playerPieces[player];
             filled = (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
 
-            for(int i = 0; i<5; i++){
-                filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
-            }
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
 
             // now we check the spaces that are good
 
             freespaces |= free_spaces() & Shift(filled, dir);
         }
 
-        for(int i = 0; i<8; i++){
-            for(int j = 0; j<8; j++){
-                if(is_one(freespaces, j, i))
-                    moves.push_back(pos_t(j, i));
-            }
-        }
-
-        // cerr << moves.size() << endl;
-        // for(auto &move : moves){
-        //     cerr << "Move " << move.get_x() << " " << move.get_y() << endl;
-        // }
-
-        // cerr << drawBoard(freespaces) << endl;
+        return freespaces;
     }
 
     int count_moves(player_t player){
@@ -277,43 +257,29 @@ public:
         board_t freespaces = 0;
 
         for(direction_t dir = 0; dir < 8; dir++){
-
-            board_t tmpPlayer = playerPieces[player];
-
             filled = playerPieces[player];
 
             filled = (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
 
-            for(int i = 0; i<5; i++){
-                filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
-            }
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
 
             // now we check the spaces that are good
 
             freespaces |= (~filled) & Shift(filled, dir);
         }
 
-        int cnt = 0;
-        for(int i = 0; i<8; i++){
-            for(int j = 0; j<8; j++){
-                if(is_one(freespaces, j, i))
-                    cnt++;
-            }
-        }
-
-        return cnt;
+        return __popcount(freespaces);
     }
 
     void do_move(pos_t move, player_t player, bool printDEBUG){
-        lastlastPos = lastPos;
-        lastPos = move;
         moves_made++;
 
         if(move.isEmpty())
             return;
-
-        pos_t currentMove = move;
-        pos_t originalMove = move;
 
         set_one(playerPieces[player], move.get_x(), move.get_y());
 
@@ -321,25 +287,17 @@ public:
         board_t toFill = 0;
 
         for(direction_t dir = 0; dir < 8; dir++){
-
-            board_t tmpPlayer = 0;
-            set_one(tmpPlayer, move.get_x(), move.get_y());
-
-            filled = tmpPlayer;
-
-            // cerr << "Printing boards:" << endl;
-            // cerr << drawBoard(filled) << endl;
-            // cerr << endl;
-            // cerr << drawBoard(playerPieces[OPPONENT(player)]);
+            filled = 0;
+            set_one(filled, move.get_x(), move.get_y());
 
             filled = (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
 
-            for(int i = 0; i<5; i++){
-                filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
-            }
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
+            filled |= (Shift(filled, dir) & playerPieces[OPPONENT(player)]);
 
-            // cerr << "direction " << (int)dir << endl;
-            // cerr << drawBoard(filled) << endl;
 
             // now we check the spaces that are good
 
@@ -347,16 +305,13 @@ public:
                 toFill |= filled;
         }
 
-        // cerr << "moving:\n";
-        // cerr << drawBoard(toFill) << endl;
-
         playerPieces[player] |= toFill;
         playerPieces[OPPONENT(player)] = (playerPieces[OPPONENT(player)] | toFill) & (~toFill);
     }
 
     float heuristic_eval(player_t player){
 
-        float p_tiles=0, p_corners=0, p_weighted=0, p_mobility=0, p_occupiedcorners;
+        float p_tiles=0, p_corners=0, p_weighted=0, p_mobility=0, p_occupiedcorners=0, p_fronttiles=0;
 
 /* tiles and weighted tiles */
 
@@ -366,17 +321,34 @@ public:
         float player_tile_weighted = 0;
         float opponent_tile_weighted = 0;
 
-        for(int i = 0; i<8; i++){
-            for(int j = 0; j<8; j++){
-                if(get_player(j, i) == player){
-                    player_tile_count++;
-                    player_tile_weighted += BOARD_WEIGHTS[i][j];
-                }
-                else if(get_player(j, i) == OPPONENT(player)){
-                    opponent_tile_count++;
-                    opponent_tile_weighted += BOARD_WEIGHTS[i][j];
+        float player_front_tiles = 0;
+        float opponent_front_tiles = 0;
+
+        int boardInd = 0;
+        int i, j;
+        while(boardInd < 64){
+            i = boardInd >> 3;
+            j = boardInd & (ll)7;
+
+            if(get_player(j, i) == player){
+                player_tile_count++;
+                player_tile_weighted += BOARD_WEIGHTS[i][j];
+
+                for(auto &dir : DIRS){
+                    if(get_player(j + dir.get_x(), i + dir.get_y()) == NONE)
+                        player_front_tiles++;
                 }
             }
+            else if(get_player(j, i) == OPPONENT(player)){
+                opponent_tile_count++;
+                opponent_tile_weighted += BOARD_WEIGHTS[i][j];
+
+                for(auto &dir : DIRS){
+                    if(get_player(j + dir.get_x(), i + dir.get_y()) == NONE)
+                        opponent_front_tiles++;
+                }
+            }
+            boardInd++;
         }
 
         if(player_tile_count > opponent_tile_count)
@@ -384,6 +356,11 @@ public:
         else if(opponent_tile_count > player_tile_count)
             p_tiles = -100.0 * (opponent_tile_count) / (player_tile_count + opponent_tile_count);
     
+        if(player_front_tiles > opponent_front_tiles)
+            p_fronttiles = 100.0 * (player_front_tiles) / (player_front_tiles + opponent_front_tiles);
+        else if(opponent_front_tiles > player_front_tiles)
+            p_fronttiles = -100.0 * (opponent_front_tiles) / (player_front_tiles + opponent_front_tiles);
+
         p_weighted = player_tile_weighted - opponent_tile_weighted;
 /* mobility */
 
@@ -422,133 +399,151 @@ public:
 
         p_corners = -12.5 * (player_closeCorners - opponent_closeCorners);
 
-        return 350*p_tiles + 801.724 * p_occupiedcorners + 382.026 * p_corners + 78.922 * p_mobility + 200 * p_weighted;
+        return 10 * p_tiles + 801.724 * p_occupiedcorners + 78.922 * p_mobility + 382.026 * p_corners + 230 * p_weighted - 74.396 * p_fronttiles;
     }
 
-    bool terminal(){
-        if(moves_made >= 64)
-            return true;
-
+    player_t terminal(player_t player){
         if(moves_made < 2)
-            return false;
-        
-        return lastPos.isEmpty() && lastlastPos.isEmpty();
+            return NONE;
+
+        if(count_moves(PLAYER0) == 0 && count_moves(PLAYER1) == 0){
+            return __popcount(playerPieces[player]) > __popcount(playerPieces[OPPONENT(player)]) ? player : OPPONENT(player); 
+        }
+
+        return NONE;
     }
 
 };
 
+int my_player;
+
 class Player{
 public:
     Reversi current_game;
-    int my_player;
 
     void reset(){
         current_game = Reversi();
         my_player = 1;
-        say("RDY");
-
+        cout << "RDY" << endl;
     }
 
-    void say(string message){
-        cout << message;
-        cout << '\n';
-        cout.flush();
-    }
 
-    pair<string, vector<string>> hear(){
-        string line;
-
-
-        cin >> line;
-        cin.ignore();
-
-        //cerr << line << endl;
-
-        size_t pos = 0;
-        std::string token;
-
-        string cmd;
-        vector<string> args;
-
-        while ((pos = line.find(" ")) != std::string::npos) {
-            token = line.substr(0, pos);
-            args.push_back(token);
-            line.erase(0, pos + string(" ").length());
-
-            //cerr << token << endl;
+    static float min_max(Reversi currentBoard, int depth, player_t currentPlayer, float alpha, float beta){
+        if(depth == 0){
+            return currentBoard.heuristic_eval(my_player); 
         }
 
-        cmd = args[0];
-        args.erase(args.begin());
-
-        return {cmd, args};
-    }
-
-    static pair<float, pos_t> min_max(Reversi currentBoard, int depth, player_t currentPlayer, player_t originalPlayer, float alpha, float beta){
-        if(depth == 0 || currentBoard.terminal()){
-            return { currentBoard.heuristic_eval(originalPlayer), pos_t() }; 
+        player_t winner;
+        if((winner = currentBoard.terminal(my_player)) != NONE){
+            return winner == my_player ? FLT_MAX : -FLT_MAX;
         }
 
-        if(currentPlayer == originalPlayer){
+        if(currentPlayer == my_player){
             float maxEval = -FLT_MAX;
 
-            vector<pos_t> moves;
-            currentBoard.moves(currentPlayer, moves);
-            
-            pos_t moveToMake;
+            auto moves = currentBoard.moves(currentPlayer);
+            int moveind = 0;
+            while(moves){
+                while((moves & (ll)1) == 0){
+                    moves >>= 1;
+                    moveind++;
+                }
 
-            for(auto &move : moves){
+                auto move = pos_t(moveind & (ll)7, moveind >> (3));
+                moveind++;
+                moves >>=1;
+
                 Reversi newGame = currentBoard;
                 newGame.do_move(move, currentPlayer, false);
 
-                auto res = Player::min_max(newGame, depth - 1, OPPONENT(currentPlayer), originalPlayer, alpha, beta);
+                auto res = Player::min_max(newGame, depth - 1, OPPONENT(currentPlayer), alpha, beta);
 
-                maxEval = max(maxEval, res.first);
-
-                if(maxEval == res.first)
-                    moveToMake = move;
+                maxEval = max(maxEval, res);
 
                 alpha = max(maxEval, alpha);
 
                 if(beta <= alpha)
                     break;
             }
+            
 
             //cerr << "At depth " << depth << " picked max " << maxEval << endl;
 
-            return { maxEval, moveToMake };
+            return maxEval;
         }
         else{
             float minEval = FLT_MAX;
-            pos_t moveToMake;
 
-            vector<pos_t> moves;
-            currentBoard.moves(currentPlayer, moves);
-            
-            for(auto &move : moves){
+            auto moves = currentBoard.moves(currentPlayer);
+            int moveind = 0;
+            while(moves){
+                while((moves & (ll)1) == 0){
+                    moves >>= 1;
+                    moveind++;
+                }
+
+                auto move = pos_t(moveind & (ll)7, moveind >> (3));
+                moveind++;
+                moves >>=1;
+
                 Reversi newGame = currentBoard;
                 newGame.do_move(move, currentPlayer, false);
 
-                auto res = Player::min_max(newGame, depth - 1, OPPONENT(currentPlayer), originalPlayer, alpha, beta);
+                auto res = Player::min_max(newGame, depth - 1, OPPONENT(currentPlayer), alpha, beta);
 
-                minEval = min(minEval, res.first);
-
-                if(minEval == res.first)
-                    moveToMake = move;
+                minEval = min(minEval, res);
 
                 beta = min(minEval, beta);
 
                 if(beta <= alpha)
                     break;
             }
+            
             //cerr << "At depth " << depth << " picked " << minEval << endl;
 
-            return { minEval, moveToMake };
+            return minEval;
         }
-
     }
 
-    void loop2(){
+    static pos_t pickmove(Reversi currentBoard, int depth, player_t currentPlayer, float alpha, float beta){
+        float maxEval = -FLT_MAX;
+        pos_t moveToMake;
+
+        auto moves = currentBoard.moves(currentPlayer);
+
+        int moveind = 0;
+        while(moves){
+            while((moves & (ll)1) == 0){
+                moves >>= 1;
+                moveind++;
+            }
+
+            auto move = pos_t(moveind & (ll)7, moveind >> (3));
+            moveind++;
+            moves >>=1;
+
+            //cout << "Available move: " << move.get_x() << " " << move.get_y() << endl;
+
+            Reversi newGame = currentBoard;
+            newGame.do_move(move, currentPlayer, false);
+
+            auto res = Player::min_max(newGame, depth - 1, OPPONENT(currentPlayer), alpha, beta);
+
+            maxEval = max(maxEval, res);
+
+            if(maxEval == res)
+                moveToMake = move;
+
+            alpha = max(maxEval, alpha);
+
+            if(beta <= alpha)
+                break;
+        }
+
+        return moveToMake;
+    }
+
+    void loop(){
         srand(time(NULL));
 
         reset();
@@ -561,8 +556,6 @@ public:
             string command; 
             cin >> command; 
             cin.ignore();
-
-            chrono::_V2::system_clock::time_point  start_time;
 
             if(command == "BYE")
                 return;
@@ -602,12 +595,10 @@ public:
 
             //cerr << current_game.draw() << endl;
 
-            start_time = chrono::high_resolution_clock::now();
-
             pos_t move_to_make;
 
             //cerr << "-------- MINMAX -------------" << endl;
-            move_to_make = Player::min_max(current_game, 4, my_player, my_player, -FLT_MAX, FLT_MAX).second;
+            move_to_make = Player::pickmove(current_game, 4, my_player, -FLT_MAX, FLT_MAX);
 
             current_game.do_move(move_to_make, my_player, false);
 
@@ -616,9 +607,7 @@ public:
 
             cout << "IDO ";
             cout << move_to_make.get_x() << " " << move_to_make.get_y() << endl;
-
         }
-
     }
 };
 
@@ -626,5 +615,5 @@ int main(){
 
     Player pl;
 
-    pl.loop2();
+    pl.loop();
 }

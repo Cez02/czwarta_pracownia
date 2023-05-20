@@ -1,3 +1,0 @@
-usage: ai_dueler_2023.py [-h] [--verbose VERBOSE] [--num_games NUM_GAMES]
-                         game p0 p1
-ai_dueler_2023.py: error: unrecognized arguments: --num-games ./random.sh
