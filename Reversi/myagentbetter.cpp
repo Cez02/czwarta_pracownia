@@ -1,5 +1,11 @@
 #include <bits/stdc++.h>
 
+/*
+TO DO:
+- animals should not be able to walk into lakes
+- test the program against the other random bot
+*/
+
 using namespace std;
 
 typedef char player_t;
@@ -544,10 +550,7 @@ public:
     }
 
     void loop(){
-        srand(time(NULL));
-
         reset();
-
 
         while(1)
         {
